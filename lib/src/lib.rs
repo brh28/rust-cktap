@@ -1,3 +1,5 @@
+use secp256k1::ecdh::SharedSecret;
+use secp256k1::ecdsa::Signature;
 use secp256k1::hashes::sha256;
 use secp256k1::rand::rngs::ThreadRng;
 use secp256k1::rand::Rng;
@@ -5,7 +7,7 @@ use secp256k1::{rand, All, Message, PublicKey, Secp256k1};
 use std::fmt;
 use std::fmt::Debug;
 // use bech32::{self, FromBase32, ToBase32, Variant};
-
+use crate::commands::unzip;
 pub mod apdu;
 pub mod commands;
 pub mod factory_root_key;
@@ -122,11 +124,11 @@ impl<T: CkTransport> TapSigner<T> {
         // set most significant bit to 1 to represent hardened path steps
         let path = path.iter().map(|p| p ^ (1 << 31)).collect();
         let app_nonce = rand_nonce();
-        let (_eprivkey, epubkey, xcvc) = self.calc_ekeys_xcvc(cvc, &DeriveCommand::name());
-        let cmd = DeriveCommand::for_tapsigner(app_nonce, path, epubkey, xcvc);
+        let (eprivkey, epubkey, xcvc) = self.calc_ekeys_xcvc(cvc, &DeriveCommand::name());
+        let cmd = DeriveCommand::for_tapsigner(app_nonce.clone(), path, epubkey, xcvc);
         let derive_response: Result<DeriveResponse, Error> = self.transport.transmit(cmd);
         if let Ok(response) = &derive_response {
-            self.card_nonce = response.card_nonce.clone();
+            // self.card_nonce = response.card_nonce.clone();
             // TODO why doesn't below verify_sig work?
             // self.verify_sig(
             //     app_nonce,
@@ -135,6 +137,31 @@ impl<T: CkTransport> TapSigner<T> {
             //     &response.pubkey.clone().expect("derive response pubkey"),
             //     &response.chain_code,
             // )?;
+            let card_nonce = self.card_nonce();
+            let sig = &response.sig;
+            let eprivkey = Some(&eprivkey);
+            let pubkey = &response.pubkey.clone().expect("derive response pubkey");
+            let data = &response.chain_code;
+            // let message = self.message_digest(app_nonce, data.to_owned());
+            let mut message_bytes: Vec<u8> = Vec::new();
+            message_bytes.extend("OPENDIME".as_bytes());
+            message_bytes.extend(card_nonce);
+            message_bytes.extend(app_nonce);
+            message_bytes.extend(data);
+            let message = Message::from_hashed_data::<sha256::Hash>(message_bytes.as_slice());
+            
+            let signature = Signature::from_compact(sig.as_slice())?;
+            // let pubkey = if let Some(epk) = eprivkey {
+            //     let session_key = SharedSecret::new(self.pubkey(), epk);
+            //     unzip(&mut pubkey.clone(), session_key).unwrap()
+            // } else {
+            //     PublicKey::from_slice(pubkey.as_slice()).unwrap()
+            // };
+            let pubkey = PublicKey::from_slice(&response.master_pubkey.as_slice()).unwrap();
+
+            self.secp()
+                .verify_ecdsa(&message, &signature, &pubkey)?;
+                // .map_err(|e| e.into())?;
             self.set_card_nonce(response.card_nonce.clone());
         }
         derive_response

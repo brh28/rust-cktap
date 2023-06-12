@@ -46,26 +46,26 @@ pub trait Authentication<T: CkTransport> {
         (eprivkey, epubkey, xcvc)
     }
 
-    fn verify_sig(
-        &self,
-        app_nonce: Vec<u8>,
-        sig: &Vec<u8>,
-        eprivkey: Option<&SecretKey>,
-        pubkey: &Vec<u8>,
-        data: &[u8],
-    ) -> Result<(), Error> {
-        let message = self.message_digest(app_nonce, data.to_owned());
-        let signature = Signature::from_compact(sig.as_slice())?;
-        let pubkey = if let Some(epk) = eprivkey {
-            let session_key = SharedSecret::new(self.pubkey(), epk);
-            unzip(&mut pubkey.clone(), session_key).unwrap()
-        } else {
-            PublicKey::from_slice(pubkey.as_slice()).unwrap()
-        };
-        self.secp()
-            .verify_ecdsa(&message, &signature, &pubkey)
-            .map_err(|e| e.into())
-    }
+    // fn verify_sig(
+    //     &self,
+    //     app_nonce: Vec<u8>,
+    //     sig: &Vec<u8>,
+    //     eprivkey: Option<&SecretKey>,
+    //     pubkey: &Vec<u8>,
+    //     data: &[u8],
+    // ) -> Result<(), Error> {
+    //     let message = self.message_digest(app_nonce, data.to_owned());
+    //     let signature = Signature::from_compact(sig.as_slice())?;
+    //     let pubkey = if let Some(epk) = eprivkey {
+    //         let session_key = SharedSecret::new(self.pubkey(), epk);
+    //         unzip(&mut pubkey.clone(), session_key).unwrap()
+    //     } else {
+    //         PublicKey::from_slice(pubkey.as_slice()).unwrap()
+    //     };
+    //     self.secp()
+    //         .verify_ecdsa(&message, &signature, &pubkey)
+    //         .map_err(|e| e.into())
+    // }
 
     fn message_digest(&self, app_nonce: Vec<u8>, data: Vec<u8>) -> Message {
         let card_nonce = self.card_nonce().clone();
@@ -130,13 +130,13 @@ where
             let read_response: Result<ReadResponse, Error> = self.transport().transmit(cmd);
             if let Ok(response) = &read_response {
                 let slot = self.slot().unwrap_or_default();
-                self.verify_sig(
-                    app_nonce,
-                    &response.sig,
-                    Some(&eprivkey),
-                    &response.pubkey,
-                    &[slot],
-                )?;
+                // self.verify_sig(
+                //     app_nonce,
+                //     &response.sig,
+                //     Some(&eprivkey),
+                //     &response.pubkey,
+                //     &[slot],
+                // )?;
                 self.set_card_nonce(response.card_nonce.clone());
             }
             read_response
@@ -145,7 +145,7 @@ where
             let read_response: Result<ReadResponse, Error> = self.transport().transmit(cmd);
             if let Ok(response) = &read_response {
                 let slot = self.slot().unwrap_or_default();
-                self.verify_sig(app_nonce, &response.sig, None, &response.pubkey, &[slot])?;
+                // self.verify_sig(app_nonce, &response.sig, None, &response.pubkey, &[slot])?;
                 self.set_card_nonce(response.card_nonce.clone());
             }
             read_response
@@ -235,7 +235,7 @@ where
     }
 }
 
-fn unzip(encoded: &mut Vec<u8>, session_key: SharedSecret) -> Result<PublicKey, secp256k1::Error> {
+pub fn unzip(encoded: &mut Vec<u8>, session_key: SharedSecret) -> Result<PublicKey, secp256k1::Error> {
     let session_key = session_key.as_ref(); // 32 bytes
     let mut pubkey = encoded.clone();
     let xor_bytes = encoded.split_off(1);
